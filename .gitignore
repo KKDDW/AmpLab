@@ -1,0 +1,127 @@
+# =====================================================
+#  Python 通用 (Windows + macOS + Linux)
+# =====================================================
+
+# 字节码缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 打包/分发
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+*.whl
+
+# pip / pipenv / poetry
+pip-wheel-metadata/
+.pip/
+.pypirc
+poetry.lock
+Pipfile.lock
+
+# =====================================================
+#  虚拟环境
+# =====================================================
+venv/
+.venv/
+env/
+ENV/
+.ENV/
+.python-version
+
+# =====================================================
+#  IDE / 编辑器
+# =====================================================
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# =====================================================
+#  测试 / 覆盖率
+# =====================================================
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.cache/
+nosetests.xml
+*.cover
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# =====================================================
+#  日志 / 临时文件
+# =====================================================
+*.log
+logs/
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+ehthumbs_view.db
+$RECYCLE.BIN/
+
+# =====================================================
+#  项目专属
+# =====================================================
+
+# 用户配置 (含 API key 等)
+.env
+.env.local
+*.local.json
+
+# COMSOL 缓存 / 临时
+comsol_cache/
+*.mph.lock
+comsol_server.log
+
+# 大型数据 (按需打开)
+# *.csv
+# *.xlsx
+# data/raw/
+# data/external/
+
+# =====================================================
+#  Mavis / mavis 缓存 (如有)
+# =====================================================
+.mavis/
+.mavis-cache/
+.mavis/state/
+
+# =====================================================
+#  �ɴ��뱸�� (��ɾ��, ��ֹ��ָ�)
+# =====================================================
+comsol_ampacity_mcp/
+"mini - ����/"
