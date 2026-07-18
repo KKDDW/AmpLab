@@ -144,9 +144,11 @@ class _LogStore:
         if self._initialized:
             return self._ring  # type: ignore[attr-defined]
 
-        # 1. 根 logger
+        # 1. 根 logger —— 设为 DEBUG 让所有级别的 record 都能下到 handler
+        # 真正的"用户想要的 level"由 console handler 控制 (下面 line 158)
+        # ring + file handler 永远全留 (UI / 日志文件可看全量)
         root = logging.getLogger("ampacity")
-        root.setLevel(level)
+        root.setLevel(logging.DEBUG)
         root.propagate = False  # 别再往 root logger 冒泡
 
         fmt = "[%(asctime)s] %(levelname)-7s %(name)s: %(message)s"

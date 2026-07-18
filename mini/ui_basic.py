@@ -31,6 +31,18 @@ _LEVEL_STYLE = {
     "success":  ("green",   "success"),   # 业务自定义
 }
 
+# 级别优先级 (数字越大越严重). 切到 INFO 意味着 DEBUG 不显示, 其它都显示.
+# 跟 Python logging 标准一致 (DEBUG=10, INFO=20, WARNING=30, ERROR=40, CRITICAL=50)
+_LEVEL_ORDER = {
+    "DEBUG":    10,
+    "INFO":     20,
+    "WARNING":  30,
+    "ERROR":    40,
+    "CRITICAL": 50,
+    "sys":      20,   # 业务自定义, 跟 INFO 同级
+    "success":  20,   # 业务自定义, 跟 INFO 同级
+}
+
 
 class BasicPanel(ttk.Frame):
     """基础界面面板 (4 个业务按钮 + 1 个日志切换按钮)
@@ -63,6 +75,8 @@ class BasicPanel(ttk.Frame):
         # 日志区状态
         self._log_visible = False
         self._replayed = False  # 日志区首次展开时回放一次
+        # 当前显示级别 (默认 INFO, 不显示 DEBUG). 切换时重新过滤.
+        self._log_level = "INFO"
 
         self._build_ui()
         self.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -122,6 +136,20 @@ class BasicPanel(ttk.Frame):
         )
         self.btn_toggle_log.pack(side=tk.RIGHT, padx=4)
 
+        # 日志级别过滤按钮 (DEBUG/INFO/WARN/ERR) —— 紧贴日志按钮左侧
+        # 默认 INFO (DEBUG 不显示); 实时切换并重新过滤
+        self._log_level_buttons = {}
+        for lvl, label in [("DEBUG", "DEBUG"), ("INFO", "INFO"),
+                            ("WARNING", "WARN"), ("ERROR", "ERR")]:
+            btn = ttk.Button(
+                bar, text=label, width=6,
+                command=lambda L=lvl: self._set_log_level(L),
+            )
+            btn.pack(side=tk.RIGHT, padx=2)
+            self._log_level_buttons[lvl] = btn
+        # 初始时高亮默认级别
+        self._refresh_level_buttons()
+
         # 业务展示区 (Phase 3 再丰富, 现在留空 frame 占位)
         body = ttk.Frame(self)
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -163,20 +191,54 @@ class BasicPanel(ttk.Frame):
                 self._replayed = True
 
     def _replay_ring(self) -> None:
-        """首次展开时把 ring buffer 的历史一次性塞进日志区"""
+        """首次展开时把 ring buffer 的历史塞进日志区 (按当前 level 过滤)"""
         if self._ring is None:
             return
         snap = self._ring.snapshot()
+        shown = 0
         for ts, level, msg in snap:
-            self._write_line(ts, level, msg)
-        if snap:
+            if self._should_show(level):
+                self._write_line(ts, level, msg)
+                shown += 1
+        if shown:
             self._write_line(
                 datetime.now(), "info",
-                f"—— 以上 {len(snap)} 条为历史日志, 实时日志请继续往下看 ——"
+                f"—— 以上 {shown}/{len(snap)} 条为过滤后历史 (level={self._log_level}) ——"
             )
 
+    def _should_show(self, level: str) -> bool:
+        """按当前 _log_level 过滤. 业务自定义 level (sys/success) 跟 INFO 同级."""
+        threshold = _LEVEL_ORDER.get(self._log_level, 20)
+        actual = _LEVEL_ORDER.get(level, 20)
+        return actual >= threshold
+
+    def _set_log_level(self, level: str) -> None:
+        """切换日志显示级别. 清空当前内容, 重新从 ring buffer 过滤回放."""
+        if level not in _LEVEL_ORDER:
+            return
+        self._log_level = level
+        self._refresh_level_buttons()
+        log.info("日志级别切换到 %s", level)
+        # 清掉当前 ScrolledText 内容, 重新回放
+        self.log_text.configure(state=tk.NORMAL)
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.configure(state=tk.DISABLED)
+        # 强制标记未回放, 让 _toggle_log 下次展开时回放
+        self._replayed = False
+        if self._log_visible:
+            self._replayed = True
+            self._replay_ring()
+
+    def _refresh_level_buttons(self) -> None:
+        """高亮当前选中的 level 按钮 (其它按钮复位)."""
+        for lvl, btn in self._log_level_buttons.items():
+            if lvl == self._log_level:
+                btn.state(["pressed"])
+            else:
+                btn.state(["!pressed"])
+
     def _write_line(self, ts: datetime, level: str, msg: str) -> None:
-        """写一行日志到 ScrolledText (线程安全)"""
+        """写一行日志到 ScrolledText (线程安全). 内部不再过滤, 调用方负责."""
         line = f"[{ts:%H:%M:%S}] {level:<7} {msg}"
         _, tag = _LEVEL_STYLE.get(level, ("black", "info"))
         self.log_text.configure(state=tk.NORMAL)
@@ -187,10 +249,13 @@ class BasicPanel(ttk.Frame):
     # ---- 公开方法 (供 dispatcher 调用) ----
 
     def append_log(self, message: str, level: str = "info") -> None:
-        """追加一条日志 (主线程直接调; 后台线程通过 root.after 调)"""
+        """追加一条日志 (主线程直接调; 后台线程通过 root.after 调).
+        按当前 _log_level 过滤, 低于级别的直接丢弃."""
         ts = datetime.now()
         # 统一把业务 level 转 logging level 名, 找不到就用 info
         level_norm = level.upper() if level.upper() in _LEVEL_STYLE else "INFO"
+        if not self._should_show(level_norm):
+            return
         self.root.after(0, self._write_line, ts, level_norm, message)
 
     def clear_log(self) -> None:
