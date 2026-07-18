@@ -19,7 +19,7 @@ from ..backends.base import BackendProtocol
 from ..utils.events import EventBus
 from ..utils.logger import get_logger
 from ..optimizer import (
-    regula_falsi_method,
+    iterative_interpolation_method,
     MAX_CURRENT,
     MIN_CURRENT,
 )
@@ -201,8 +201,12 @@ class AmpacitySolver:
             # 只支持 linear (regula falsi / 试位法 / 线性插值法)
             if method not in ("linear", "regula_falsi", "falsi"):
                 log.warning("method=%r 不支持, 强制用 linear", method)
-            res = regula_falsi_method(solve_func, target_T, I_low, I_high,
-                                      tolerance, max_iter)
+            # 新算法只要一个初始试探电流, 取 bracket 中点
+            x_guess = (I_low + I_high) / 2.0
+            res = iterative_interpolation_method(
+                solve_func, target_T, x_guess,
+                tolerance, max_iter,
+            )
         except Exception as e:
             log.error("寻优异常 task=%d: %s", task_id, e)
             return {
