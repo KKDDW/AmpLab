@@ -29,7 +29,8 @@ from .context import AppContext
 from .dispatcher import AppDispatcher
 from .engine_core import AmpacityEngine
 from .utils.logger import Store, init_logging
-from .ui_basic import BasicPanel
+from .ui import BasicPanel
+from .ui.utils import center_window
 
 
 def create_app(
@@ -42,12 +43,13 @@ def create_app(
     """构造一个完整的 mini app。返回 (root, ctx, dispatcher)。"""
 
     # 1. 日志 (ring handler 一并就绪)
-    init_logging(log_dir=log_dir, level=20, buffer_capacity=2000)
+    init_logging(log_dir=log_dir, level=10, buffer_capacity=2000)
 
     # 2. Tk root
     root = tk.Tk()
     root.title(title)
     root.geometry(geometry)
+    center_window(root)  # 居中到屏幕
 
     # 3. 后端 / 引擎
     if backend is None:

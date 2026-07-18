@@ -70,6 +70,8 @@ class AppDispatcher:
         self._load_persisted_config()
 
         log.info("dispatcher 就绪 (未启动引擎, 等 start)")
+        # 启动时 UI 状态: 引擎没就绪, 只有"添加文件"亮
+        self.root.after(0, self._refresh_ui_state)
 
     # ---- 生命周期 ----
 
@@ -141,9 +143,14 @@ class AppDispatcher:
         self._engine_ready = True
         log.info("引擎启动: COMSOL %s / %s 核", version, cores)
         self.ui.append_log(f"COMSOL {version} / {cores} 核 就绪", "success")
+        # 引擎就绪, 刷新 UI 状态 (init -> no_file 或 ready)
+        self.root.after(0, self._refresh_ui_state)
 
     def _on_engine_stopped_event(self) -> None:
+        self._engine_ready = False
         self.ui.append_log("COMSOL 引擎已断开", "warning")
+        # 引擎挂了, 回到 init
+        self.root.after(0, self._refresh_ui_state)
 
     def _on_file_loaded_event(self, path: str) -> None:
         log.info("模型已加载: %s", os.path.basename(path))
@@ -168,11 +175,14 @@ class AppDispatcher:
         self,
         name: str,
         fn: Callable[[], Any],
-        busy_ui: bool = True,
+        busy_state: str = "computing",  # 忙碌时的状态名 ("inspecting" / "computing" / ...)
     ) -> None:
-        """统一的后台执行: 线程化 + 异常吞 + UI 按钮状态恢复 + 空闲日志"""
-        if busy_ui:
-            self.root.after(0, self.ui.set_buttons_state, True)
+        """统一的后台执行: 线程化 + 异常吞 + UI 按钮状态恢复 + 空闲日志
+
+        busy_state: 线程跑起来时按钮切到的状态 (一般是 "inspecting" / "computing")
+        线程结束后调 _refresh_ui_state() 自动算当前应该回到啥状态
+        """
+        self.root.after(0, self.ui.set_buttons_state, busy_state)
         log.info("▶ 开始执行: %s", name)
 
         def wrapper() -> None:
@@ -183,12 +193,32 @@ class AppDispatcher:
                 self.bus.emit("exception", name=name, error=str(e),
                               traceback=traceback.format_exc())
             finally:
-                if busy_ui:
-                    self.root.after(0, self.ui.set_buttons_state, False)
+                # 任务结束, 按当前业务状态刷新按钮
+                self.root.after(0, self._refresh_ui_state)
                 # 任务结束, 报空闲
                 self._log_idle(name)
 
         threading.Thread(target=wrapper, daemon=True, name=name).start()
+
+    def _refresh_ui_state(self) -> None:
+        """根据当前业务状态算 UI 应该亮啥按钮, 然后设置
+
+        规则:
+          - 引擎没就绪: init
+          - 引擎就绪 + 无文件: no_file
+          - 引擎就绪 + 有文件 + 还没全检测: ready (允许再点检测)
+          - 引擎就绪 + 有文件 + 全部检测完: inspected
+        """
+        if not self._engine_ready:
+            new_state = "init"
+        elif not self.file_list:
+            new_state = "no_file"
+        else:
+            # inspector 内部 cache 里有 path, 表示"已检测过"
+            cache = self.engine._inspector._cache
+            all_done = all(f in cache for f in self.file_list)
+            new_state = "inspected" if all_done else "ready"
+        self.ui.set_buttons_state(new_state)
 
     def _log_idle(self, last_task: str) -> None:
         """任务结束后, 报告当前空闲状态 + 文件 / 引擎状态摘要"""
@@ -220,6 +250,8 @@ class AppDispatcher:
         for f in self.file_list:
             log.info("  - %s", os.path.basename(f))
         self.ui.append_log(f"已添加 {len(self.file_list)} 个文件", "success")
+        # 文件选好了, 状态从 no_file -> ready
+        self.root.after(0, self._refresh_ui_state)
 
     def _on_inspect(self) -> None:
         file_list = list(self.file_list)
@@ -243,7 +275,7 @@ class AppDispatcher:
                     )
             self.ui.append_log("模型检测完成", "sys")
 
-        self._run_in_thread("inspect", work)
+        self._run_in_thread("inspect", work, busy_state="inspecting")
 
     def _on_calc(self) -> None:
         if not self._check_files():
@@ -261,7 +293,6 @@ class AppDispatcher:
             initial_I = default_I
         else:
             initial_I = self.config.get("compute.initial_I", 800.0)
-        method = self.config.get("compute.method", "hybrid")
 
         def work() -> None:
             self.ui.append_log("=" * 50, "sys")
@@ -274,7 +305,6 @@ class AppDispatcher:
                 target_T=target_T,
                 tolerance=tolerance,
                 initial_I=initial_I,
-                method=method,
             )
             if res.ok:
                 tasks = res.data.get("tasks", [])
@@ -289,7 +319,7 @@ class AppDispatcher:
             else:
                 self.ui.append_log(f"批量失败: {res.error}", "error")
 
-        self._run_in_thread("compute", work)
+        self._run_in_thread("compute", work, busy_state="computing")
 
     def _on_stop(self) -> None:
         log.warning("用户点击中断")
@@ -308,7 +338,8 @@ class AppDispatcher:
             if not res.ok:
                 self.ui.append_log("COMSOL 引擎启动失败 (详见日志)", "error")
 
-        self._run_in_thread("start-engine", work, busy_ui=False)
+        # 引擎启动时: 切到 "init" (按钮全灰, 等 _on_engine_started_event 刷成 no_file)
+        self._run_in_thread("start-engine", work, busy_state="init")
 
     # ---- 配置持久化 ----
 
@@ -353,9 +384,9 @@ if __name__ == "__main__":
     from .utils.config import ConfigStore
     from .engine_core import make_mock_engine
     from .utils.logger import init_logging
-    from .ui_basic import BasicPanel
+    from .ui import BasicPanel
 
-    init_logging(log_dir="logs", level=20)
+    init_logging(log_dir="logs", level=10)
     config = ConfigStore()
     engine = make_mock_engine()
     bus = engine.bus

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from .utils.config import ConfigStore
     from .engine_core import AmpacityEngine
     from .utils.events import EventBus
-    from .ui_basic import BasicPanel
+    from .ui import BasicPanel
 
 
 @dataclass(frozen=True)

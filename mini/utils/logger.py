@@ -45,37 +45,77 @@ _RESET = "\033[0m"
 _DIM = "\033[2m"           # 时间戳变暗, 让级别和消息更突出
 _BOLD = "\033[1m"
 
+# 字段高亮: 数字亮绿 (一眼看到数据), 状态关键词染色 (成功=亮绿, 失败/异常=亮红)
+_NUMBER_COLOR = "\033[92m"  # 亮绿
+_KEYWORD_OK = "\033[92m"     # 亮绿 - 成功/收敛/✓
+_KEYWORD_BAD = "\033[91m"    # 亮红 - 失败/异常/✗
+_KEYWORD_WARN = "\033[33m"   # 黄   - 警告/没收敛
+
+# 数字匹配: 整数 / 小数 / 百分号
+# 边界: 前面不能是字母 (避免 abc123), 后面不能是字母
+# (允许 =-/ 等符号, 数字应该是 "key=value" / "key-value" 里的 value 部分)
+import re as _re
+_NUM_RE = _re.compile(r'(?<![a-zA-Z.])\d+(?:\.\d+)?%?(?![a-zA-Z0-9])')
+# 2+ 空格分隔 (用于解析 fmt 输出)
+_WS_RE = _re.compile(r'  +')
+
+# 状态关键词 (不区分大小写)
+_KEYWORDS_OK = ("成功", "✓", "收敛", "完成", "ok", "done", "success")
+_KEYWORDS_BAD = ("失败", "异常", "✗", "错误", "error", "fail", "exception", "crash")
+_KEYWORDS_WARN = ("警告", "warning", "没收敛", "未收敛")
+
 
 class _ColorFormatter(logging.Formatter):
     """给控制台加颜色 (Windows Terminal / VSCode 终端都能识别)
 
-    配色: 时间戳暗灰, 级别按上面 _COLOR_MAP, 模块名亮青, 消息默认亮白
+    配色:
+      - 时间戳:   暗灰
+      - 级别:     按 _COLOR_MAP
+      - 模块名:   暗灰
+      - 消息:     亮白, 数字亮绿, 状态关键词按类型染色
     """
 
     def format(self, record: logging.LogRecord) -> str:
-        # 原始格式化
         msg = super().format(record)
-        # 给级别加色
         color = _COLOR_MAP.get(record.levelname, "")
         if not color:
             return msg
-        # 找 [timestamp] LEVEL 的位置, 单独着色
+
+        # 解析 fmt 输出: "YYYY-MM-DD HH:MM:SS  LEVEL  module.name  message"
+        # 用 2+ 空格分隔 (logging 会把字段对齐, 可能多空格)
         try:
-            ts_end = msg.index("]") + 1
-            timestamp = msg[:ts_end]
-            rest = msg[ts_end:]
-            # rest 形如 " LEVEL module.name: message"
-            parts = rest.split(" ", 2)
-            if len(parts) >= 3:
-                level_str = parts[0] + " "   # "INFO " 之类
-                module_str = parts[1]        # "ampacity.xxx"
-                body = parts[2]              # "message"
-                return (f"{_DIM}{timestamp}{_RESET}"
-                        f"{_BOLD}{color}{level_str}{_RESET}"
-                        f"{_DIM}{module_str}{_RESET}: {body}")
+            parts = _WS_RE.split(msg, maxsplit=3)
+            if len(parts) < 4:
+                # 拆不出 4 段, 走原始
+                return f"{color}{msg}{_RESET}"
+            timestamp, level_str, module_str, body = parts
+            # 给消息里的数字 / 状态词染色
+            colored_body = self._colorize_body(body)
+            return (f"{_DIM}{timestamp}{_RESET}  "
+                    f"{_BOLD}{color}{level_str}{_RESET}  "
+                    f"{_DIM}{module_str}{_RESET}  {colored_body}")
         except Exception:
-            pass
-        return f"{color}{msg}{_RESET}"
+            return f"{color}{msg}{_RESET}"
+
+    def _colorize_body(self, body: str) -> str:
+        """给消息里的状态关键词染色
+
+        不染数字, 正文不加粗 (只是普通白字). 关键词 (成功/失败/异常) 才染色.
+        """
+        out = body
+        # 1. 成功关键词 (亮绿)
+        for kw in _KEYWORDS_OK:
+            if kw in out:
+                out = out.replace(kw, f"{_KEYWORD_OK}{kw}{_RESET}")
+        # 2. 失败关键词 (亮红)
+        for kw in _KEYWORDS_BAD:
+            if kw in out:
+                out = out.replace(kw, f"{_KEYWORD_BAD}{kw}{_RESET}")
+        # 3. 警告关键词 (黄)
+        for kw in _KEYWORDS_WARN:
+            if kw in out:
+                out = out.replace(kw, f"{_KEYWORD_WARN}{kw}{_RESET}")
+        return out
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +177,7 @@ class _LogStore:
     def init(
         self,
         log_dir: str = "logs",
-        level: int = logging.INFO,
+        level: int = logging.DEBUG,
         buffer_capacity: int = 2000,
     ) -> RingBufferHandler:
         """初始化全局日志系统。重复调用安全, 返回 ring handler 供 UI 用。"""
@@ -151,13 +191,16 @@ class _LogStore:
         root.setLevel(logging.DEBUG)
         root.propagate = False  # 别再往 root logger 冒泡
 
-        fmt = "[%(asctime)s] %(levelname)-7s %(name)s: %(message)s"
-        datefmt = "%Y-%m-%d %H:%M:%S"   # 带日期, 跟 COMSOL 自己的日志日期格式一致
+        # 格式: "YYYY-MM-DD HH:MM:SS  LEVEL  module.name  message"
+        # 用 2+ 空格分隔, _ColorFormatter 解析
+        fmt = "%(asctime)s  %(levelname)-7s  %(name)s  %(message)s"
+        datefmt = "%Y-%m-%d %H:%M:%S"   # 带日期, 到秒 (不要毫秒, 易读)
         formatter = logging.Formatter(fmt, datefmt=datefmt)
 
-        # 2. 控制台
+        # 2. 控制台 —— 硬编码 INFO+ (不显示 DEBUG, 不管 init_logging 传啥)
+        # 调试细节靠 UI 弹窗切到 DEBUG 看
         console = logging.StreamHandler(sys.stdout)
-        console.setLevel(level)
+        console.setLevel(logging.INFO)
         console.setFormatter(_ColorFormatter(fmt, datefmt=datefmt))
         root.addHandler(console)
 
@@ -205,7 +248,7 @@ Store = _LogStore()
 
 def init_logging(
     log_dir: str = "logs",
-    level: int = logging.INFO,
+    level: int = logging.DEBUG,
     buffer_capacity: int = 2000,
 ) -> RingBufferHandler:
     """便捷入口: 初始化日志系统, 返回 ring handler 供 UI 订阅。"""

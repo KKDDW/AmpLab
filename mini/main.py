@@ -22,7 +22,7 @@ if _PROJECT not in sys.path:
     sys.path.insert(0, _PROJECT)
 
 from mini.bootstrap import create_app
-from mini.logger import get_logger
+from mini.utils.logger import get_logger
 
 
 def main() -> None:

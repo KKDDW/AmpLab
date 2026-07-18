@@ -32,7 +32,7 @@ from mini.utils import ConfigStore, EventBus
 def _init_logging():
     """每个测试都确保 logging 已初始化, log 文件扔临时目录 (不污染)"""
     tmp = tempfile.mkdtemp(prefix="amp_test_")
-    L.init_logging(log_dir=tmp, level=20, buffer_capacity=200)
+    L.init_logging(log_dir=tmp, level=10, buffer_capacity=200)
     yield
     # 测试结束不删 tmp (留作 debug), 走 OS 自动清
 

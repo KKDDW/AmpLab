@@ -214,7 +214,6 @@ class AmpacityEngine:
         target_T: float = 90.0,
         tolerance: float = 0.05,
         initial_I: float = 800.0,
-        method: str = "secant",
     ) -> Result:
         try:
             tasks = self._batch.run(
@@ -224,7 +223,6 @@ class AmpacityEngine:
                 target_T=target_T,
                 tolerance=tolerance,
                 initial_I=initial_I,
-                method=method,
             )
         except Exception as e:
             log.exception("run_batch 异常")
