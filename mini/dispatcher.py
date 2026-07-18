@@ -382,13 +382,14 @@ class AppDispatcher:
 # ---- 独立测试 ----
 if __name__ == "__main__":
     from .utils.config import ConfigStore
-    from .engine_core import make_mock_engine
+    from .engine_core import AmpacityEngine
+    from .tests._mocks import MockBackend
     from .utils.logger import init_logging
     from .ui import BasicPanel
 
     init_logging(log_dir="logs", level=10)
     config = ConfigStore()
-    engine = make_mock_engine()
+    engine = AmpacityEngine(backend=MockBackend())
     bus = engine.bus
 
     root = tk.Tk()

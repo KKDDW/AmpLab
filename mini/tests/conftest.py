@@ -20,7 +20,8 @@ import pytest
 
 # 让 mini.* 可 import (mini 已经是包, tests 在 mini 内部, 直接 import 即可)
 from mini.utils import logger as L
-from mini.engine_core import make_mock_engine
+from mini.engine_core import AmpacityEngine
+from mini.tests._mocks import MockBackend
 from mini.utils import ConfigStore, EventBus
 
 
@@ -52,7 +53,7 @@ def tmp_log_dir(tmp_path) -> Path:
 @pytest.fixture
 def mock_engine():
     """离线 AmpacityEngine, 用 MockBackend, 跑得快"""
-    eng = make_mock_engine()
+    eng = AmpacityEngine(backend=MockBackend())
     eng.start_engine()
     yield eng
     eng.stop_engine()

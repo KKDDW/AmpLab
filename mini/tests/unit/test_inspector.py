@@ -13,7 +13,7 @@ import pytest
 from mini.engine.inspector import ModelInspector
 from mini.utils.events import EventBus
 from mini.utils.concurrency import ConcurrencyGate
-from mini.backends import MockBackend
+from mini.tests._mocks import MockBackend
 
 
 class FakeLoader:

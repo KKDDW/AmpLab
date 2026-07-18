@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""ampacity-lab (mini): MockBackend
+"""ampacity-lab (mini): 测试用 mock
 =============================================
 
-完全离线的后端, 用于:
-  - 单元测试 (不依赖 COMSOL / mph)
-  - 本地开发 (机器上没装 COMSOL 也能跑 UI 看流程)
-  - 端到端冒烟
+放测试用的假后端 (MockBackend), 真代码 (mini/backends/) 不再引用.
 
-模拟行为:
-  - 模型加载 "成功" (返回假元数据)
-  - 求解: 立刻返回 success
-  - 求值: 用 I -> T 的简单解析式 (可配)
+跟 mini/backends/base.py 的关系:
+  - 这里定义 MockBackend, 实现 mini.backends.base.BackendProtocol 接口
+  - tests/ 下的 conftest.py / test_inspector.py 都从这里 import
+
+跟真代码的关系:
+  - 真生产代码 (engine_core / bootstrap) 只用 MphCompatBackend
+  - MockBackend 只在 tests/ 里被引用
 """
 from __future__ import annotations
 
@@ -18,18 +18,24 @@ import math
 from typing import Any, Callable, Dict, List, Optional
 
 from ..utils.logger import get_logger
-from .base import BackendProtocol
+from ..backends.base import BackendProtocol
 
 log = get_logger(__name__)
 
 
 class MockBackend:
-    """完全离线, 返回假数据"""
+    """完全离线的假后端, 跑得快, 给测试用.
+
+    模拟行为:
+      - 模型加载 "成功" (返回假元数据)
+      - 求解: 立刻返回 success (50ms 模拟延迟)
+      - 求值: 用 I -> T 的简单解析式 (默认 T = 25 + 0.05*I + 1e-5*I^2)
+    """
 
     def __init__(
-        self,
-        evaluate_fn: Optional[Callable[[float], float]] = None,
-        models: Optional[List[Dict[str, Any]]] = None,
+            self,
+            evaluate_fn: Optional[Callable[[float], float]] = None,
+            models: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         # 默认 I -> T 的关系: T = 25 + 0.05*I + 0.00001*I^2
         # 在 I=1300 时 T ≈ 25 + 65 + 16.9 = 106.9

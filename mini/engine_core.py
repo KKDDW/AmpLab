@@ -29,7 +29,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from .backends import BackendProtocol, MphCompatBackend, MockBackend
+from .backends import BackendProtocol, MphCompatBackend
 from .utils.concurrency import ConcurrencyGate
 from .engine import (
     AmpacitySolver,
@@ -234,7 +234,4 @@ class AmpacityEngine:
 
 
 # ---- 工厂 ----
-
-def make_mock_engine() -> AmpacityEngine:
-    """快速构造 Mock 后端的引擎 (开发/单测)"""
-    return AmpacityEngine(backend=MockBackend())
+# (make_mock_engine 已删除, MockBackend 在 tests/_mocks.py, 测试自己去那造)
