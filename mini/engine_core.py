@@ -11,11 +11,11 @@
   - 锁通过 busy 属性 + try_acquire/release 公开方法暴露
 
 外部接口 (向后兼容 + 升级):
-  - start_engine(version, cores)         -> Result
+  - start_engine(comsol_version, cores) -> Result
   - stop_engine()                        -> Result
   - load_mph(path)                       -> Result
   - inspect_mph(path=None)               -> Result
-  - compute_ampacity(target_T, ..., solver=None) -> Result
+  - compute_ampacity(target_T, I_guess, ..., solver=None) -> Result
   - run_batch(file_list, ...)            -> Result[List[PointResult]]
   - request_stop()
   - busy                                 -> bool
@@ -193,18 +193,16 @@ class AmpacityEngine:
     def compute_ampacity(
         self,
         target_T: float = 90.0,
-        I_low: float = 500.0,
-        I_high: float = 1500.0,
+        I_guess: float = 1000.0,
         tolerance: float = 0.05,
         max_iter: int = 15,
-        method: str = "linear",   # 只支持 linear (regula falsi / 两点插值)
         task_id: int = 0,
         solver=None,
     ) -> Result:
         data = self._solver.compute_ampacity(
-            target_T=target_T, I_low=I_low, I_high=I_high,
+            target_T=target_T, I_guess=I_guess,
             tolerance=tolerance, max_iter=max_iter,
-            method=method, task_id=task_id, solver=solver,
+            task_id=task_id, solver=solver,
         )
         return Result.from_dict(data)
 
