@@ -153,11 +153,9 @@ class BatchRunner:
                         t_point = time.time()
                         res = self._solver.compute_ampacity(
                             target_T=target_T,
-                            I_low=max(MIN_CURRENT, last_I - 200),
-                            I_high=min(MAX_CURRENT, last_I + 200),
+                            I_guess=last_I,
                             tolerance=tolerance,
                             max_iter=15,
-                            method=method,
                             task_id=completed,
                         )
                         elapsed = time.time() - t_point
