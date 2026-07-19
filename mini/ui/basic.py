@@ -59,10 +59,6 @@ class BasicPanel(ttk.Frame):
         # 【配置管理器】
         self.config = config
 
-        # 无论传入的 parent 是 Frame 还是 Tk 对象，都能精准拿到最顶级的 window 实例。
-        # 这是为了确保弹出的 LogWindow 能够认祖归宗，挂载在正确的父级上。
-        self.root = parent if isinstance(parent, tk.Tk) else parent.winfo_toplevel()
-
         # 【安全降级防御】
         self.on_add_files = on_add_files or (lambda: None)
         self.on_inspect = on_inspect or (lambda: None)
@@ -181,36 +177,48 @@ class BasicPanel(ttk.Frame):
         )
         self.btn_toggle_theme.pack(side=tk.RIGHT, padx=BUTTON_PADDING_X)
 
-        # 主体业务展示区 (左右分栏布局)
+        # 主体业务展示区 (上下分: 上半 左文件+设置 / 右扫描; 下半 结果)
         body = ttk.Frame(self)
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # 左侧面板 (文件列表 + 设置)
-        left_panel = ttk.Frame(body, width=400)
-        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 4))
-        left_panel.pack_propagate(False)
+        # === 上半 (左: 文件+设置; 右: 扫描) ===
+        top_section = ttk.Frame(body)
+        top_section.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=(0, 4))
+        top_section.grid_columnconfigure(0, weight=1)  # 左
+        top_section.grid_columnconfigure(1, weight=1)  # 右
+        top_section.grid_rowconfigure(0, weight=1)
 
-        # 文件列表面板
+        # 左侧 (文件列表 + 设置)
+        top_left = ttk.Frame(top_section)
+        top_left.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+
         self.file_list_panel = FileListPanel(
-            left_panel,
+            top_left,
             on_add_files=self.on_add_files,
             on_clear_files=lambda: self._on_clear_files() if self._on_clear_files else None
         )
         self.file_list_panel.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
-        # 设置面板
         self.settings_panel = SettingsPanel(
-            left_panel,
+            top_left,
             config=self.config,
-            on_change=lambda k, v: None  # 占位回调
+            on_change=lambda k, v: None
         )
         self.settings_panel.pack(fill=tk.X, expand=False)
 
-        # 右侧面板 (结果表格)
-        right_panel = ttk.Frame(body)
-        right_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # 右侧 (参数组扫描 + 独立参数扫描 - 都在 SettingsPanel 末尾)
+        # 用一个空 frame 占位让 SettingsPanel 在右侧撑开
+        top_right = ttk.Frame(top_section)
+        top_right.grid(row=0, column=1, sticky="nsew")
+        # 实际 scan 块已经在 SettingsPanel 末尾, 这里留个空 frame
+        ttk.Label(top_right, text="(参数扫描区见左侧设置面板底部)",
+                  foreground="gray").pack(pady=20)
 
-        self.result_table_panel = ResultTablePanel(right_panel)
+        # === 下半 (结果表格) ===
+        bottom_section = ttk.Frame(body)
+        bottom_section.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        self.result_table_panel = ResultTablePanel(bottom_section)
         self.result_table_panel.pack(fill=tk.BOTH, expand=True)
 
     # =======================================================================

@@ -55,6 +55,9 @@ def create_app(
     root = tk.Tk()
     center_window(root, w, h)  # 居中到屏幕 (一次设)
     root.title(title)
+    # 应用默认主题 (normal), 让 disable 颜色/字体/背景都生效
+    from .ui.themes import apply_theme
+    apply_theme(root, "normal")
 
     # 3. 后端 / 引擎
     if backend is None:

@@ -19,6 +19,7 @@ from tkinter import ttk, messagebox
 from typing import Callable, Optional, Any, Dict, List
 
 from .constants import BUTTON_PADDING_X
+from tkinter import font as tkfont
 from ..utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -125,15 +126,46 @@ class SettingsPanel(ttk.LabelFrame):
         ttk.Label(self, text="收敛变量:").grid(
             row=row, column=2, sticky="e", padx=(20, BUTTON_PADDING_X), pady=4
         )
-        self._widgets["temp_expression"] = ttk.Entry(self, width=12)
+        # 收敛变量改成下拉框 (检测后填入模型参数, 默认 "I")
+        self._widgets["temp_expression"] = ttk.Combobox(
+            self, values=["I"], state="normal", width=12
+        )
+        self._widgets["temp_expression"].set("I")
         self._widgets["temp_expression"].grid(row=row, column=3, sticky="w", pady=4)
+        # 收敛变量: 存到 solver.current_param (新 key, 跟 derived_expr 区分开)
+        self._widgets["temp_expression"].bind("<<ComboboxSelected>>",
+                                               lambda e: self._on_changed("solver.current_param"))
         self._widgets["temp_expression"].bind("<FocusOut>",
-                                               lambda e: self._on_changed("solver.temp_expression"))
+                                               lambda e: self._on_changed("solver.current_param"))
+        row += 1
+
+        # 派生表达式 (新加) - 默认 max(T, 1), 用来处理算结果时避免 T=0
+        ttk.Label(self, text="派生表达式:").grid(
+            row=row, column=0, sticky="e", padx=BUTTON_PADDING_X, pady=4
+        )
+        self._widgets["derived_expr"] = ttk.Entry(self, width=17)
+        self._widgets["derived_expr"].grid(row=row, column=1, sticky="w", pady=4)
+        self._widgets["derived_expr"].bind("<FocusOut>",
+                                            lambda e: self._on_changed("solver.derived_expr"))
         row += 1
 
         # 设置列权重，让控件可以扩展
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure(3, weight=1)
+
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # 参数组扫描 (第 4 块, 跟上面 grid 兼容)
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # 记录下一个可用 row
+        self._next_row = row
+        self._build_group_scan_frame(row=self._next_row)
+        self._next_row += 1
+
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # 独立参数扫描 (第 5 块)
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        self._build_independent_scan_frame(row=self._next_row)
+        self._next_row += 1
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # 公开 API
@@ -158,10 +190,16 @@ class SettingsPanel(ttk.LabelFrame):
             else:
                 self._widgets["study_node"].set("等待检测...")
 
-            # 收敛变量
-            val = self.config.get("solver.temp_expression", "max(T, 1)")
+            # 收敛变量 (用什么参数去逼近 80°C, 默认 I)
+            val = self.config.get("solver.current_param", "I")
             self._widgets["temp_expression"].delete(0, tk.END)
             self._widgets["temp_expression"].insert(0, str(val))
+
+            # 派生表达式 (算出来的表达式, 默认 max(T, 1))
+            val = self.config.get("solver.derived_expr", "max(T, 1)")
+            if hasattr(self, "_widgets") and "derived_expr" in self._widgets:
+                self._widgets["derived_expr"].delete(0, tk.END)
+                self._widgets["derived_expr"].insert(0, str(val))
 
             # 目标值
             val = self.config.get("compute.target_T", 90.0)
@@ -216,7 +254,8 @@ class SettingsPanel(ttk.LabelFrame):
         """
         widget_map = {
             "solver.target_study": "study_node",
-            "solver.temp_expression": "temp_expression",
+            "solver.current_param": "temp_expression",
+            "solver.derived_expr": "derived_expr",
             "compute.target_T": "target_T",
             "compute.tolerance": "tolerance",
             "compute.initial_I": "initial_I",
@@ -269,6 +308,252 @@ class SettingsPanel(ttk.LabelFrame):
             self.config.set("solver.target_study", node_names[0])
 
         log.debug(f"更新研究节点列表: {node_names}，已选择: {node_names[0]}")
+
+    def update_parameters(self, parameters) -> None:
+        """更新参数列表到下拉框 (供 dispatcher 调用, 检测后填入)
+
+        Parameters
+        ----------
+        parameters : List
+            参数列表 (从模型检测结果中获取)
+            可以是 list[dict {name, value, description}] 或 list[str]
+        """
+        if not parameters:
+            # 没有参数, 至少保留默认 "I"
+            self._widgets["temp_expression"]["values"] = ["I"]
+            return
+
+        # 提取参数名称
+        param_names = []
+        for p in parameters:
+            if isinstance(p, dict):
+                param_names.append(p.get("name", str(p)))
+            else:
+                param_names.append(str(p))
+
+        # 保留当前值 (如果还在列表里)
+        current = self._widgets["temp_expression"].get()
+        self._widgets["temp_expression"]["values"] = param_names
+        if current in param_names:
+            self._widgets["temp_expression"].set(current)
+        elif "I" in param_names:
+            self._widgets["temp_expression"].set("I")
+        else:
+            self._widgets["temp_expression"].set(param_names[0])
+
+        log.debug(f"更新参数列表: {param_names}，已选择: {self._widgets['temp_expression'].get()}")
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 参数组扫描 UI
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    # 列名默认值
+    GROUP_DEFAULT_COLS = ["PackageNam", "D", "r3", "r2", "r1", "r0", "R", "d"]
+
+    def _build_group_scan_frame(self, row: int = 0) -> None:
+        """构建参数组扫描 UI (表格 + 增删按钮)"""
+        frame = ttk.LabelFrame(self, text="📦 参数组包扫描", padding=6)
+        frame.grid(row=row, column=0, columnspan=4, sticky="ew", pady=(10, 4), padx=2)
+
+        # 顶部: 启用 + 提示 + 增删按钮
+        top = ttk.Frame(frame)
+        top.pack(fill=tk.X, pady=(0, 4))
+
+        self._group_enabled = tk.BooleanVar(value=False)
+        ttk.Checkbutton(top, text="启用", variable=self._group_enabled,
+                        command=self._on_group_toggle).pack(side=tk.LEFT)
+
+        ttk.Label(top, text="  ↓ 点格子直接改数值, {行} 增组 {列} 增变量",
+                  foreground="gray").pack(side=tk.LEFT, padx=(8, 0))
+
+        for text, cmd in [("+ 行", self._add_group_row),
+                          ("- 行", self._del_group_row),
+                          ("+ 列", self._add_group_col),
+                          ("- 列", self._del_group_col),
+                          ("重置", self._reset_group)]:
+            ttk.Button(top, text=text, width=6, command=cmd).pack(
+                side=tk.RIGHT, padx=2)
+
+        # 表格区 (Treeview: 1 行表头 + N 行数据)
+        self._group_tree_frame = ttk.Frame(frame)
+        self._group_tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 默认 1 行 1 列 (启动时占位)
+        self._group_data: List[List[str]] = [[""] * 1]  # 1 行 1 列
+        self._group_col_names: List[str] = [self.GROUP_DEFAULT_COLS[0]]
+        self._rebuild_group_tree()
+
+    def _rebuild_group_tree(self) -> None:
+        """根据 self._group_data + _group_col_names 重建 Treeview"""
+        # 清掉旧的
+        for w in self._group_tree_frame.winfo_children():
+            w.destroy()
+
+        # 表头: "#列名" + 各列名
+        headers = ["# 行号"] + self._group_col_names
+
+        self._group_tree = ttk.Treeview(
+            self._group_tree_frame, columns=headers, show="headings", height=4
+        )
+        for h in headers:
+            self._group_tree.heading(h, text=h)
+            self._group_tree.column(h, width=80, anchor="center")
+
+        # 数据行
+        for i, row in enumerate(self._group_data):
+            values = [f"#{i + 1}"] + row
+            self._group_tree.insert("", tk.END, values=values)
+
+        # 滚动条
+        sb = ttk.Scrollbar(self._group_tree_frame, orient=tk.VERTICAL,
+                           command=self._group_tree.yview)
+        self._group_tree.configure(yscrollcommand=sb.set)
+        self._group_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+    def _on_group_toggle(self) -> None:
+        """启用/禁用 组扫描 (disable 时表格灰)"""
+        state = "normal" if self._group_enabled.get() else "disabled"
+        # 启用时强制至少有 1 行
+        if self._group_enabled.get() and not self._group_data:
+            self._group_data = [[""]]
+            self._rebuild_group_tree()
+
+    def _add_group_row(self) -> None:
+        if not self._group_enabled.get():
+            return
+        self._group_data.append([""] * len(self._group_col_names))
+        self._rebuild_group_tree()
+
+    def _del_group_row(self) -> None:
+        if not self._group_enabled.get():
+            return
+        if len(self._group_data) > 1:
+            self._group_data.pop()
+            self._rebuild_group_tree()
+
+    def _add_group_col(self) -> None:
+        if not self._group_enabled.get():
+            return
+        # 用默认列名, 或者 #col_N
+        next_idx = len(self._group_col_names)
+        if next_idx < len(self.GROUP_DEFAULT_COLS):
+            self._group_col_names.append(self.GROUP_DEFAULT_COLS[next_idx])
+        else:
+            self._group_col_names.append(f"col{next_idx + 1}")
+        for row in self._group_data:
+            row.append("")
+        self._rebuild_group_tree()
+
+    def _del_group_col(self) -> None:
+        if not self._group_enabled.get():
+            return
+        if len(self._group_col_names) > 1:
+            self._group_col_names.pop()
+            for row in self._group_data:
+                if row:
+                    row.pop()
+            self._rebuild_group_tree()
+
+    def _reset_group(self) -> None:
+        self._group_data = [[""]]
+        self._group_col_names = [self.GROUP_DEFAULT_COLS[0]]
+        self._rebuild_group_tree()
+
+    def get_group_data(self) -> Dict:
+        """返回参数组数据 (供 dispatcher 用)
+
+        Returns
+        -------
+        dict
+            {"enabled": bool, "columns": [...], "rows": [[...], ...]}
+        """
+        return {
+            "enabled": self._group_enabled.get(),
+            "columns": list(self._group_col_names),
+            "rows": [list(r) for r in self._group_data],
+        }
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 独立参数扫描 UI
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    def _build_independent_scan_frame(self, row: int = 0) -> None:
+        """构建独立参数扫描 UI (文本区 + 增删按钮)"""
+        frame = ttk.LabelFrame(self, text="📝 独立参数扫描", padding=6)
+        frame.grid(row=row, column=0, columnspan=4, sticky="ew", pady=(4, 0), padx=2)
+
+        # 顶部: 启用 + 提示 + 增删
+        top = ttk.Frame(frame)
+        top.pack(fill=tk.X, pady=(0, 4))
+
+        self._ind_enabled = tk.BooleanVar(value=False)
+        ttk.Checkbutton(top, text="启用", variable=self._ind_enabled,
+                        command=self._on_ind_toggle).pack(side=tk.LEFT)
+
+        ttk.Label(top, text="  一行一变量: 变量名 = 数值1, 数值2, 数值3",
+                  foreground="gray").pack(side=tk.LEFT, padx=(8, 0))
+
+        for text, cmd in [("+ 行", self._add_ind_row),
+                          ("- 行", self._del_ind_row)]:
+            ttk.Button(top, text=text, width=6, command=cmd).pack(
+                side=tk.RIGHT, padx=2)
+
+        # 文本区
+        self._ind_text = tk.Text(frame, height=4, font=("Consolas", 10),
+                                  wrap=tk.NONE)
+        self._ind_text.pack(fill=tk.BOTH, expand=True)
+
+        # 默认放 1 行示例
+        self._ind_text.insert("1.0", "# 例: xiayi = 0, 5000\nk = 1.2, 1.0, 0.8\n")
+
+    def _on_ind_toggle(self) -> None:
+        state = "normal" if self._ind_enabled.get() else "disabled"
+        self._ind_text.configure(state=state)
+
+    def _add_ind_row(self) -> None:
+        if not self._ind_enabled.get():
+            return
+        # 在末尾加一行
+        self._ind_text.insert(tk.END, "\n")
+
+    def _del_ind_row(self) -> None:
+        if not self._ind_enabled.get():
+            return
+        # 删最后一行
+        last_line = self._ind_text.index("end-1c").split(".")[0]
+        if int(last_line) > 1:
+            self._ind_text.delete(f"{int(last_line) - 1}.0", f"{last_line}.0")
+
+    def get_independent_data(self) -> Dict:
+        """返回独立参数扫描数据 (供 dispatcher 用)
+
+        Returns
+        -------
+        dict
+            {"enabled": bool, "raw_text": str, "parsed": [{name, values}, ...]}
+        """
+        raw = self._ind_text.get("1.0", tk.END).rstrip()
+        parsed = []
+        for line in raw.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                name, _, val = line.partition("=")
+                name = name.strip()
+                # 解析逗号分隔的数值
+                values = [v.strip() for v in val.split(",") if v.strip()]
+                try:
+                    values = [float(v) for v in values]
+                except ValueError:
+                    pass  # 保留字符串
+                parsed.append({"name": name, "values": values})
+        return {
+            "enabled": self._ind_enabled.get(),
+            "raw_text": raw,
+            "parsed": parsed,
+        }
 
     def _on_changed(self, config_key: str) -> None:
         """配置项变化回调

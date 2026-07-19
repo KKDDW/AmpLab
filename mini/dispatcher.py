@@ -187,6 +187,11 @@ class AppDispatcher:
         if studies:
             self.root.after(0, self.ui.update_study_nodes, studies)
 
+        # 更新参数列表 (给 SettingsPanel 用, 让收敛变量下拉有内容)
+        parameters = result.get("parameters", [])
+        if parameters:
+            self.root.after(0, self.ui.update_parameters, parameters)
+
         # 如果 inspector 建好了派生值, 通知 solver 切到 cached label (提速)
         cached = result.get("suggested_cached_label")
         if cached:
@@ -424,10 +429,14 @@ class AppDispatcher:
         cfg = self.engine.config_snapshot()
         # 优先用持久化的, 没有就保持 solver 默认
         if "target_T" in self.config.snapshot().get("compute", {}):
+            # 派生表达式: 优先新 key solver.derived_expr, 兼容旧 key solver.temp_expression
+            cfg_derived = self.config.get("solver.derived_expr", None)
+            if cfg_derived is None:
+                cfg_derived = self.config.get("solver.temp_expression", cfg["temp_expression"])
             self.engine.configure(
                 target_study=self.config.get("solver.target_study", cfg["target_study"]),
                 current_param_name=self.config.get("solver.current_param_name", cfg["current_param_name"]),
-                temp_expression=self.config.get("solver.temp_expression", cfg["temp_expression"]),
+                temp_expression=cfg_derived,
                 temp_unit=self.config.get("solver.temp_unit", cfg["temp_unit"]),
             )
         log.info("已从 ConfigStore 恢复参数")

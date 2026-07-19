@@ -215,7 +215,7 @@ def apply_theme(root: tk.Tk, theme_name: str) -> None:
                         font=font,
                         borderwidth=2,
                         relief="raised",
-                        padding=(12, 8))  # 更大的内边距
+                        padding=(10, 6))  # 统一内边距, 跨主题按钮大小一致
         style.map("TButton",
                   background=[
                       ("disabled", "#E0E0E0"),

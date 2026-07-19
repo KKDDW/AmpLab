@@ -19,9 +19,11 @@
     "buffer_capacity": 2000
   },
   "solver": {
-    "target_study": "等待检测",
+    "target_study": "研究 1",
     "current_param_name": "I",
     "temp_expression": "max(T, 1)",
-    "temp_unit": "degC"
+    "temp_unit": "degC",
+    "current_param": "I",
+    "derived_expr": "max(T, 1)"
   }
 }
