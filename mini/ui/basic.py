@@ -18,10 +18,17 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, Optional
+from typing import Callable, Optional, Any, List
 
 from .log_window import LogWindow
+from .file_list_panel import FileListPanel
+from .settings_panel import SettingsPanel
+from .result_table_panel import ResultTablePanel
 from .themes import THEMES, apply_theme, get_theme
+from .constants import (
+    BUTTON_WIDTH_STANDARD, BUTTON_WIDTH_NARROW, BUTTON_WIDTH_WIDE,
+    BUTTON_PADDING_X
+)
 from ..utils.logger import get_logger, RingBufferHandler
 
 log = get_logger(__name__)
@@ -41,26 +48,37 @@ class BasicPanel(ttk.Frame):
             on_calc: Optional[Callable[[], None]] = None,
             on_stop: Optional[Callable[[], None]] = None,
             ring: Optional[RingBufferHandler] = None,
+            config: Optional[Any] = None,
     ) -> None:
         super().__init__(parent)
 
         # 【稳健获取根窗口】
         # 无论传入的 parent 是 Frame 还是 Tk 对象，都能精准拿到最顶级的 window 实例。
+        self.root = parent if isinstance(parent, tk.Tk) else parent.winfo_toplevel()
+
+        # 【配置管理器】
+        self.config = config
+
+        # 无论传入的 parent 是 Frame 还是 Tk 对象，都能精准拿到最顶级的 window 实例。
         # 这是为了确保弹出的 LogWindow 能够认祖归宗，挂载在正确的父级上。
         self.root = parent if isinstance(parent, tk.Tk) else parent.winfo_toplevel()
 
         # 【安全降级防御】
-        # 如果调用方没有注入回调函数，就赋一个 lambda: None 空函数。
-        # 这样即使用户点了按钮，也只会什么都不做，而不会抛出 TypeError 导致程序崩溃。
         self.on_add_files = on_add_files or (lambda: None)
         self.on_inspect = on_inspect or (lambda: None)
         self.on_calc = on_calc or (lambda: None)
         self.on_stop = on_stop or (lambda: None)
 
+        # 【清空文件列表回调】（后续由 dispatcher 注入）
+        self._on_clear_files: Optional[Callable[[], None]] = None
+
+
         # 【组件复合 (Composition)】
-        # 实例化独立的日志窗口管理器。由于其内部采用了懒加载机制，
-        # 此处只是创建了管理器实例，并不会真的弹出一个黑框框打扰用户。
         self._log_win = LogWindow(self.root, ring=ring)
+
+        # 帮助窗口引用（保证只有一个）
+        self._help_window: Optional[tk.Toplevel] = None
+
 
         # 【主题状态】当前主题: normal / cute
         self._theme: str = "normal"
@@ -108,41 +126,92 @@ class BasicPanel(ttk.Frame):
         bar = ttk.Frame(self)
         bar.pack(side=tk.TOP, fill=tk.X, pady=(0, 8))
 
-        # 4 个核心业务操作按钮，依次向左对齐
-        self.btn_add_files = ttk.Button(bar, text="添加文件", command=self.on_add_files)
-        self.btn_add_files.pack(side=tk.LEFT, padx=4)
-
-        self.btn_inspect = ttk.Button(bar, text="检测模型", command=self.on_inspect)
-        self.btn_inspect.pack(side=tk.LEFT, padx=4)
-
-        self.btn_calc = ttk.Button(bar, text="开始计算", command=self.on_calc)
-        self.btn_calc.pack(side=tk.LEFT, padx=4)
-
-        # 中断按钮，危险操作，初始状态严格禁用
-        self.btn_stop = ttk.Button(bar, text="中断", command=self.on_stop, state=tk.DISABLED)
-        self.btn_stop.pack(side=tk.LEFT, padx=4)
-
-        # 日志按钮，放在最右侧 (符合大多数工具栏的用户习惯)。
-        # 直接绑定子组件 LogWindow 的 toggle 方法，点击时控制弹窗。
-        self.btn_toggle_log = ttk.Button(
-            bar, text="日志", command=self._log_win.toggle, width=8,
+        # 4 个核心业务操作按钮
+        self.btn_add_files = ttk.Button(
+            bar, text="添加文件", command=self.on_add_files,
+            width=BUTTON_WIDTH_STANDARD
         )
-        self.btn_toggle_log.pack(side=tk.RIGHT, padx=4)
+        self.btn_add_files.pack(side=tk.LEFT, padx=BUTTON_PADDING_X)
 
-        # 主题切换按钮 (紧贴日志按钮左侧, 用于切 normal / cute 主题)
+        self.btn_inspect = ttk.Button(
+            bar, text="检测模型", command=self.on_inspect,
+            width=BUTTON_WIDTH_STANDARD
+        )
+        self.btn_inspect.pack(side=tk.LEFT, padx=BUTTON_PADDING_X)
+
+        self.btn_calc = ttk.Button(
+            bar, text="开始计算", command=self.on_calc,
+            width=BUTTON_WIDTH_STANDARD
+        )
+        self.btn_calc.pack(side=tk.LEFT, padx=BUTTON_PADDING_X)
+
+        # 中断按钮
+        self.btn_stop = ttk.Button(
+            bar, text="中断", command=self.on_stop,
+            width=BUTTON_WIDTH_STANDARD, state=tk.DISABLED
+        )
+        self.btn_stop.pack(side=tk.LEFT, padx=BUTTON_PADDING_X)
+
+        # 状态标签
+        self.lbl_status = ttk.Label(
+            bar, text="状态: 空闲中",
+            font=("", 10, "bold"),
+            foreground="gray"
+        )
+        self.lbl_status.pack(side=tk.LEFT, padx=(20, BUTTON_PADDING_X))
+
+        # 日志按钮
+        self.btn_toggle_log = ttk.Button(
+            bar, text="日志", command=self._log_win.toggle,
+            width=BUTTON_WIDTH_NARROW
+        )
+        self.btn_toggle_log.pack(side=tk.RIGHT, padx=BUTTON_PADDING_X)
+
+        # 帮助按钮
+        self.btn_help = ttk.Button(
+            bar, text="帮助", command=self._show_help,
+            width=BUTTON_WIDTH_NARROW
+        )
+        self.btn_help.pack(side=tk.RIGHT, padx=BUTTON_PADDING_X)
+
+        # 主题切换按钮
         self.btn_toggle_theme = ttk.Button(
             bar, text=THEMES["normal"]["toggle_text"],
-            command=self._toggle_theme, width=14,
+            command=self._toggle_theme, width=BUTTON_WIDTH_WIDE
         )
-        self.btn_toggle_theme.pack(side=tk.RIGHT, padx=4)
+        self.btn_toggle_theme.pack(side=tk.RIGHT, padx=BUTTON_PADDING_X)
 
-        # 预留的业务展示区 (后续用于嵌入表格、图表、进度条等)
+        # 主体业务展示区 (左右分栏布局)
         body = ttk.Frame(self)
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        ttk.Label(
-            body, text="(业务展示区 — Phase 3 接入)",
-            foreground="gray"
-        ).pack(pady=40)
+
+        # 左侧面板 (文件列表 + 设置)
+        left_panel = ttk.Frame(body, width=400)
+        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 4))
+        left_panel.pack_propagate(False)
+
+        # 文件列表面板
+        self.file_list_panel = FileListPanel(
+            left_panel,
+            on_add_files=self.on_add_files,
+            on_clear_files=lambda: self._on_clear_files() if self._on_clear_files else None
+        )
+        self.file_list_panel.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+
+        # 设置面板
+        self.settings_panel = SettingsPanel(
+            left_panel,
+            config=self.config,
+            on_change=lambda k, v: None  # 占位回调
+        )
+        self.settings_panel.pack(fill=tk.X, expand=False)
+
+        # 右侧面板 (结果表格)
+        right_panel = ttk.Frame(body)
+        right_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.result_table_panel = ResultTablePanel(right_panel)
+        self.result_table_panel.pack(fill=tk.BOTH, expand=True)
 
     # =======================================================================
     # 公开 API (门面模式)
@@ -168,6 +237,107 @@ class BasicPanel(ttk.Frame):
         self.btn_stop.config(text=text_map["stop"])
         self.btn_toggle_log.config(text=text_map["log"])
         self.btn_toggle_theme.config(text=theme["toggle_text"])
+
+    def _show_help(self) -> None:
+        """显示帮助窗口（单例模式 + 居中显示）"""
+        if self._help_window is not None and self._help_window.winfo_exists():
+            self._help_window.lift()
+            self._help_window.focus_force()
+            return
+
+        self._help_window = tk.Toplevel(self.root)
+        self._help_window.title("帮助文档")
+        self._help_window.geometry("700x600")
+        self._help_window.resizable(True, True)
+
+        help_text = """
+AmpLab mini - 电缆载流能力计算工具
+===========================================
+
+【核心功能】
+
+1. 添加文件
+   • 点击"添加文件"按钮，选择一个或多个 .mph 模型文件
+   • 文件列表显示在左侧，支持多选、右键删除、Delete 键删除
+   • 点击"清空列表"可一键移除所有文件
+
+2. 检测模型
+   • 添加文件后，点击"检测模型"按钮
+   • 系统会自动解析模型中的参数、研究节点等信息
+   • 检测完成后，研究节点下拉框会自动更新为实际节点名称
+
+3. 开始计算
+   • 检测完成后，"开始计算"按钮变为可用状态
+   • 可在"基础设置"中调整计算参数
+   • 点击"开始计算"后，状态标签显示"计算中"
+   • 计算结果实时显示在右侧结果表格中
+
+4. 中断
+   • 在检测或计算过程中，可点击"中断"按钮停止任务
+
+5. 日志
+   • 点击"日志"按钮可展开/收起日志窗口
+
+6. 帮助
+   • 点击"帮助"按钮即可查看本文档
+
+7. 主题切换
+   • 点击"切换主题"按钮可在正常模式和可爱模式之间切换
+
+【状态说明】
+
+• 空闲中 (灰色)：等待用户操作
+• 启动中 (蓝色)：COMSOL 引擎正在启动
+• 检测中 (蓝色)：正在检测模型结构
+• 计算中 (橙色)：正在执行载流能力计算
+
+【操作流程】
+
+1. 启动程序 → 等待引擎就绪
+2. 点击"添加文件" → 选择 .mph 文件
+3. 点击"检测模型" → 等待检测完成
+4. 调整"基础设置"中的参数（可选）
+5. 点击"开始计算" → 查看结果
+        """
+
+        text_frame = ttk.Frame(self._help_window)
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        text_widget = tk.Text(text_frame, wrap=tk.WORD, font=("", 10), padx=10, pady=10)
+        scrollbar = ttk.Scrollbar(text_frame, command=text_widget.yview)
+        text_widget.config(yscrollcommand=scrollbar.set)
+
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        text_widget.insert("1.0", help_text)
+        text_widget.config(state=tk.DISABLED)
+
+        btn_close = ttk.Button(self._help_window, text="关闭", command=self._help_window.destroy)
+        btn_close.pack(side=tk.BOTTOM, pady=10)
+
+        self._help_window.update_idletasks()
+        window_width = self._help_window.winfo_width()
+        window_height = self._help_window.winfo_height()
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        self._help_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+
+        self._help_window.protocol("WM_DELETE_WINDOW", self._help_window.destroy)
+
+    def update_study_nodes(self, nodes: List) -> None:
+        """更新研究节点选项（供 dispatcher 调用）"""
+        self.settings_panel.update_study_nodes(nodes)
+
+    def refresh_file_list(self, file_list: List[str]) -> None:
+        """刷新文件列表（供 dispatcher 调用）"""
+        self.file_list_panel.refresh(file_list)
+
+    def append_result(self, result: dict) -> None:
+        """添加计算结果（供 dispatcher 调用）"""
+        self.result_table_panel.append_result(result)
 
     def append_log(self, message: str, level: str = "info") -> None:
         """追加一条日志 -> 转发给独立日志组件处理。"""

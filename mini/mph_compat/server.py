@@ -225,7 +225,7 @@ def study_create_frequency_domain(model_name: Optional[str] = None, label: str =
 
 
 @mcp_tool()
-def study_solve(study_name: str = "研究 1", model_name: Optional[str] = None) -> dict:
+def study_solve(study_name: str = "研究 2", model_name: Optional[str] = None) -> dict:
     """Solve a study synchronously (blocks until done, ~30-300s)."""
     return study_tools.study_solve(study_name=study_name, model_name=model_name)
 

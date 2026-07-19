@@ -194,7 +194,7 @@ class AmpacityEngine:
         self,
         target_T: float = 90.0,
         I_guess: float = 1000.0,
-        tolerance: float = 0.05,
+        tolerance: float = 0.02,
         max_iter: int = 15,
         task_id: int = 0,
         solver=None,
@@ -212,7 +212,7 @@ class AmpacityEngine:
         static_groups: Optional[List[Dict]] = None,
         sweep_params: Optional[Dict[str, List]] = None,
         target_T: float = 90.0,
-        tolerance: float = 0.05,
+        tolerance: float = 0.02,
         initial_I: float = 800.0,
     ) -> Result:
         try:

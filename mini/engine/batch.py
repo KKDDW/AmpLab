@@ -89,7 +89,7 @@ class BatchRunner:
             static_groups: Optional[List[Dict]] = None,
             sweep_params: Optional[Dict[str, List]] = None,
             target_T: float = 90.0,
-            tolerance: float = 0.05,
+            tolerance: float = 0.02,
             initial_I: float = 800.0,
     ) -> List[PointResult]:
         """批量运行的安全包装层，负责加锁与解锁"""

@@ -66,6 +66,11 @@ class AppDispatcher:
             on_stop=self._on_stop,
         )
 
+        # 注入清空文件列表的回调
+        self.ui._on_clear_files = self._on_clear_files
+        # 注入删除选中文件的回调
+        self.ui.file_list_panel.on_delete_files = self._on_delete_files
+
         self._wire_events()
         self._load_persisted_config()
 
@@ -112,6 +117,22 @@ class AppDispatcher:
     # ---- 事件处理 (纯函数, 易测) ----
 
     def _on_result_event(self, result: PointResult) -> None:
+        # 更新结果表格（转换为字典）
+        result_dict = {
+            "task_id": result.task_id,
+            "file_name": result.file_name,
+            "group_name": result.group_name,
+            "env": str(result.env_params) if result.env_params else "-",
+            "final_I": result.final_I or 0.0,
+            "final_T": result.final_T or 0.0,
+            "iterations": result.iterations,
+            "elapsed_sec": result.elapsed_sec,
+            "status": result.status,
+            "converged": result.converged,
+        }
+        self.root.after(0, self.ui.append_result, result_dict)
+
+        # 打印日志
         if result.status == "success" and result.converged:
             self.ui.append_log(
                 f"✓ task {result.task_id}: {result.file_name} | "
@@ -160,6 +181,12 @@ class AppDispatcher:
                  os.path.basename(path),
                  len(result.get("parameters", [])),
                  len(result.get("studies", [])))
+
+        # 更新研究节点下拉列表
+        studies = result.get("studies", [])
+        if studies:
+            self.root.after(0, self.ui.update_study_nodes, studies)
+
         # 如果 inspector 建好了派生值, 通知 solver 切到 cached label (提速)
         cached = result.get("suggested_cached_label")
         if cached:
@@ -250,7 +277,56 @@ class AppDispatcher:
         for f in self.file_list:
             log.info("  - %s", os.path.basename(f))
         self.ui.append_log(f"已添加 {len(self.file_list)} 个文件", "success")
+
+        # 刷新 UI 文件列表显示
+        self.ui.refresh_file_list(self.file_list)
+
         # 文件选好了, 状态从 no_file -> ready
+        self.root.after(0, self._refresh_ui_state)
+
+    def _on_clear_files(self) -> None:
+        """清空文件列表"""
+        if not self.file_list:
+            return
+
+        count = len(self.file_list)
+        self.file_list.clear()
+        log.info("清空文件列表: %d 个文件", count)
+        self.ui.append_log(f"已清空 {count} 个文件", "info")
+
+        # 刷新 UI 显示
+        self.ui.refresh_file_list(self.file_list)
+
+        # 状态回退到 no_file
+        self.root.after(0, self._refresh_ui_state)
+
+    def _on_delete_files(self, indices: List[int]) -> None:
+        """删除选中的文件
+
+        Parameters
+        ----------
+        indices : List[int]
+            要删除的文件索引列表（从1开始）
+        """
+        if not indices:
+            return
+
+        # 转换为从0开始的索引并排序（从大到小删除，避免索引偏移）
+        indices_sorted = sorted([i - 1 for i in indices], reverse=True)
+
+        deleted_files = []
+        for idx in indices_sorted:
+            if 0 <= idx < len(self.file_list):
+                deleted_files.append(os.path.basename(self.file_list[idx]))
+                del self.file_list[idx]
+
+        log.info("删除文件: %d 个", len(deleted_files))
+        self.ui.append_log(f"已删除 {len(deleted_files)} 个文件", "info")
+
+        # 刷新 UI 显示
+        self.ui.refresh_file_list(self.file_list)
+
+        # 如果删完了，状态回退到 no_file
         self.root.after(0, self._refresh_ui_state)
 
     def _on_inspect(self) -> None:
@@ -347,7 +423,7 @@ class AppDispatcher:
         """从 ConfigStore 恢复 solver / 业务参数"""
         cfg = self.engine.config_snapshot()
         # 优先用持久化的, 没有就保持 solver 默认
-        if "compute.target_T" in self.config.snapshot().get("compute", {}):
+        if "target_T" in self.config.snapshot().get("compute", {}):
             self.engine.configure(
                 target_study=self.config.get("solver.target_study", cfg["target_study"]),
                 current_param_name=self.config.get("solver.current_param_name", cfg["current_param_name"]),

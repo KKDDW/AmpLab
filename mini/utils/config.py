@@ -32,7 +32,7 @@ log = get_logger(__name__)
 DEFAULT_CONFIG: dict = {
     "compute": {
         "target_T": 90.0,
-        "tolerance": 0.05,
+        "tolerance": 0.02,
         "initial_I": 800.0,
         "method": "linear",     # 唯一支持: linear (regula falsi / 两点插值)
         "max_iter": 15,
@@ -50,7 +50,7 @@ DEFAULT_CONFIG: dict = {
         "buffer_capacity": 2000,
     },
     "solver": {
-        "target_study": "研究 1",
+        "target_study": "等待检测",
         "current_param_name": "I",
         "temp_expression": "max(T, 1)",
         "temp_unit": "degC",     # target_T 是 °C, 让 COMSOL 直接返回 °C
@@ -74,8 +74,9 @@ class ConfigStore:
 
     def __init__(self, path: Optional[str] = None) -> None:
         if path is None:
-            home = os.path.expanduser("~")
-            path = os.path.join(home, ".ampacity_lab", "config.json")
+            # 使用程序根目录（mini 的上一级）
+            root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            path = os.path.join(root_dir, "config.json")
         self._path = path
         self._lock = threading.Lock()
         self._data: dict = self._load()

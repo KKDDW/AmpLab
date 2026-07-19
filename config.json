@@ -1,0 +1,27 @@
+{
+  "compute": {
+    "target_T": 80.0,
+    "tolerance": 0.02,
+    "initial_I": 800.0,
+    "method": "linear",
+    "max_iter": 15
+  },
+  "session": {
+    "comsol_version": "latest",
+    "cores": null
+  },
+  "ui": {
+    "last_open_dir": "D:/F/Pycharm/Python_Projects/ampacity_lab/AmpLab_1/Model",
+    "geometry": "1000x700"
+  },
+  "log": {
+    "level": "INFO",
+    "buffer_capacity": 2000
+  },
+  "solver": {
+    "target_study": "等待检测",
+    "current_param_name": "I",
+    "temp_expression": "max(T, 1)",
+    "temp_unit": "degC"
+  }
+}

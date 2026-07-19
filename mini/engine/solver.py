@@ -90,11 +90,9 @@ class AmpacitySolver:
         self._backend = backend
         self._bus = bus
 
-        # 寻优配置 (默认值, 可外部覆盖)
-        self.target_study: str = "研究 1"
-        # COMSOL 里电流参数的名称 (与 .mph 模型里保持一致)
+        # 寻优配置 (初始值, 由外部 engine.configure() 设置)
+        self.target_study: str = "等待检测"
         self.current_param_name: str = "I"
-        # 默认温度表达式: 算全场 max(T, 1), 避免 T=0 导致 log 算不了
         self.temp_expression: str = "max(T, 1)"
 
         # 强制统一温度单位为摄氏度 (°C), 不管 COMSOL 返啥
@@ -237,7 +235,7 @@ class AmpacitySolver:
             self,
             target_T: float = 90.0,
             I_guess: float = 1000.0,
-            tolerance: float = 0.05,
+            tolerance: float = 0.02,
             max_iter: int = 15,
             task_id: int = 0,
             solver: Optional[SolveFunc] = None,
@@ -256,7 +254,7 @@ class AmpacitySolver:
             不要求它真的接近最优解, 算法会自己收敛.
         tolerance : float
             温度收敛容差 (°C). |T - target_T| <= tolerance 时认为收敛.
-            默认 0.05.
+            默认 0.02.
         max_iter : int
             最大迭代次数 (指插值循环轮数, 不计前 2 次试探).
             默认 15.

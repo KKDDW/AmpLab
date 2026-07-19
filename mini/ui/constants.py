@@ -7,6 +7,27 @@
 """
 from __future__ import annotations
 
+# =======================================================================
+# UI 尺寸常量
+# =======================================================================
+
+# 按钮尺寸 (使用 minwidth 像素值来确保视觉宽度一致)
+BUTTON_WIDTH_STANDARD = 12      # 标准业务按钮宽度 (字符数)
+BUTTON_WIDTH_NARROW = 6         # 窄按钮 (日志/清空/关闭等)
+BUTTON_WIDTH_WIDE = 14          # 宽按钮 (主题切换)
+BUTTON_MIN_WIDTH = 90           # 按钮最小像素宽度 (确保视觉一致)
+BUTTON_PADDING_X = 4            # 按钮水平间距
+BUTTON_PADDING_Y = (8, 4)       # 按钮垂直内边距
+
+# 字体尺寸
+FONT_SIZE_NORMAL = 10           # 普通界面字体
+FONT_SIZE_BUTTON = 10           # 按钮字体
+FONT_SIZE_LOG = 9               # 日志窗口字体
+
+# 窗口尺寸
+LOG_WINDOW_WIDTH = 1000         # 日志窗口宽度
+LOG_WINDOW_HEIGHT = 500         # 日志窗口高度
+
 # 日志级别 -> (显示颜色, Text 控件使用的 tag 名)
 LEVEL_STYLE: dict = {
     "DEBUG":    ("gray",   "debug"),

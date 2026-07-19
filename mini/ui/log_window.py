@@ -17,7 +17,10 @@ from tkinter import ttk, scrolledtext
 from datetime import datetime
 from typing import Optional
 
-from .constants import LEVEL_STYLE, LEVEL_ORDER, LEVEL_BUTTONS
+from .constants import (
+    LEVEL_STYLE, LEVEL_ORDER, LEVEL_BUTTONS,
+    BUTTON_WIDTH_NARROW, LOG_WINDOW_WIDTH, LOG_WINDOW_HEIGHT
+)
 from ..utils.logger import get_logger, RingBufferHandler
 
 log = get_logger(__name__)
@@ -34,9 +37,9 @@ class LogWindow:
       - get_content() -> str: 取当前显示的文本
     """
 
-    # 弹窗默认尺寸 (像素). 想改大小, 改这一处.
-    WIN_W = 1000
-    WIN_H = 500
+    # 弹窗默认尺寸 (从常量模块读取)
+    WIN_W = LOG_WINDOW_WIDTH
+    WIN_H = LOG_WINDOW_HEIGHT
 
     def __init__(self, root: tk.Tk, ring: Optional[RingBufferHandler] = None) -> None:
         """
@@ -56,6 +59,11 @@ class LogWindow:
         # 弹窗内的 widget 引用 (弹窗创建后才有效)
         self.log_text: Optional[scrolledtext.ScrolledText] = None
         self._log_level_buttons: dict = {}  # level -> Button
+
+        # 主题样式缓存 (初始化为默认值，防止 _open() 时 AttributeError)
+        self._current_bg = "#F0F0F0"
+        self._current_fg = "#000000"
+        self._current_font = ("Consolas", 9)
 
     # =======================================================================
     # 公开 API
@@ -146,18 +154,19 @@ class LogWindow:
         self._log_level_buttons = {}
         for lvl, label in LEVEL_BUTTONS:
             btn = ttk.Button(
-                top, text=label, width=6,
+                top, text=label, width=BUTTON_WIDTH_NARROW,
                 command=lambda L=lvl: self.set_level(L),
             )
             btn.pack(side=tk.LEFT, padx=2)
             self._log_level_buttons[lvl] = btn
 
-        ttk.Button(top, text="清空", width=6, command=self.clear).pack(side=tk.RIGHT, padx=2)
-        ttk.Button(top, text="关闭", width=6, command=win.destroy).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(top, text="清空", width=BUTTON_WIDTH_NARROW, command=self.clear).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(top, text="关闭", width=BUTTON_WIDTH_NARROW, command=win.destroy).pack(side=tk.RIGHT, padx=2)
 
-        # 2. 核心文本区
+        # 2. 核心文本区 (使用缓存的主题参数)
         self.log_text = scrolledtext.ScrolledText(
-            win, wrap=tk.WORD, font=("Consolas", 9),
+            win, wrap=tk.WORD, font=self._current_font,
+            bg=self._current_bg, fg=self._current_fg
         )
         self.log_text.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
 
@@ -214,3 +223,23 @@ class LogWindow:
         self.log_text.insert(tk.END, line + "\n", tag)
         self.log_text.see(tk.END)
         self.log_text.configure(state=tk.DISABLED)
+
+    def update_style(self, bg_color: str, fg_color: str, font_family: str, font_size: int) -> None:
+        """接收外部主题参数，更新原生组件样式 (供 BasicPanel 调用)"""
+        # 1. 缓存当前主题参数，确保在首次 _open() 时能应用正确的颜色
+        self._current_bg = bg_color
+        self._current_fg = fg_color
+        self._current_font = (font_family, font_size)
+
+        # 2. 如果弹窗当前是开启状态且控件存在，则直接热更新
+        if self.log_text is not None and self._win is not None and self._win.winfo_exists():
+            try:
+                self.log_text.configure(
+                    bg=bg_color,
+                    fg=fg_color,
+                    font=self._current_font
+                )
+            except tk.TclError:
+                # 窗口已销毁，清理引用
+                self.log_text = None
+                self._win = None

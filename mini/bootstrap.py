@@ -61,11 +61,11 @@ def create_app(
         backend = MphCompatBackend()
     engine = AmpacityEngine(backend=backend)
 
-    # 4. UI (接 ring handler 以便首次展开回放)
-    ui = BasicPanel(root, ring=Store.ring)
-
-    # 5. ConfigStore (用户配置持久化)
+    # 4. ConfigStore (用户配置持久化) - 必须在 UI 之前创建
     config = ConfigStore()
+
+    # 5. UI (接 ring handler 以便首次展开回放)
+    ui = BasicPanel(root, ring=Store.ring, config=config)
 
     # 6. AppContext (打包所有依赖)
     ctx = AppContext(
